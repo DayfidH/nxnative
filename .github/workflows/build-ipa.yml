@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       game_name:
-        description: 'Target Folder / Game Name (e.g. MarioWonder)'
+        description: 'Target Folder / Game Name (e.g. PokemonPikachu)'
         required: true
-        default: 'LetsGo'
+        default: 'PokemonPikachu'
       nsp_base_url:
         description: 'Direct download URL for Base NSP/XCI'
         required: true
@@ -20,24 +20,31 @@ on:
 jobs:
   build:
     name: Build IPA on Apple Silicon
-    # Runs on GitHub's Apple Silicon runner image with macOS 26
-    runs-on: macos-26
+    runs-on: macos-latest
     timeout-minutes: 180
 
     steps:
       - name: Checkout nxnative Repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode 27.1
+      - name: Configure Xcode Version
         run: |
-          # Set and verify Xcode 27.1 developer directory
-          sudo xcode-select -s /Applications/Xcode_27.1.app/Contents/Developer
+          echo "Installed Xcode applications on runner:"
+          ls -d /Applications/Xcode*.app || true
+
+          if [ -d "/Applications/Xcode_27.1.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_27.1.app/Contents/Developer
+          elif [ -d "/Applications/Xcode_27.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_27.app/Contents/Developer
+          else
+            echo "Explicit Xcode 27 path not found. Keeping default runner toolchain."
+          fi
+
           xcodebuild -version
 
       - name: Download Metal Toolchain Component
         run: |
-          # Downloads the tested Metal compiler toolchain required by nxnative
-          xcodebuild -downloadComponent MetalToolchain
+          xcodebuild -downloadComponent MetalToolchain || true
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -65,7 +72,7 @@ jobs:
           mkdir -p ~/.switch
           echo "$PROD_KEYS_CONTENT" > ~/.switch/prod.keys
           echo "$PROD_KEYS_CONTENT" > ./prod.keys
-          # Validate that prod.keys is not empty
+          
           if [ ! -s ./prod.keys ]; then
             echo "ERROR: PROD_KEYS secret is empty or missing in repository settings!"
             exit 1
@@ -94,7 +101,6 @@ jobs:
 
       - name: Run nxnative Build Pipeline
         run: |
-          # Executes the extraction, shader translation, and IPA packaging
           python3 scripts/build_ipa_from_nsp.py "games_input/${{ github.event.inputs.game_name }}"
 
       - name: Locate and Upload IPA Artifact
