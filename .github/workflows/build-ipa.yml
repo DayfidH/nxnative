@@ -101,7 +101,7 @@ jobs:
 
       - name: Run nxnative Build Pipeline
         run: |
-          python3 scripts/build_ipa_from_nsp.py "games_input/${{ github.event.inputs.game_name }}"
+          python3 scripts/build_ipa_from_nsp.py -k ./prod.keys "games_input/${{ github.event.inputs.game_name }}"
 
       - name: Locate and Upload IPA Artifact
         uses: actions/upload-artifact@v4
