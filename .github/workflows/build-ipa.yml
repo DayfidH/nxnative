@@ -8,8 +8,8 @@ on:
         required: true
         default: 'PokemonPikachu'
       nsp_base_url:
-        description: 'Direct download URL for Base NSP/XCI'
-        required: true
+        description: 'Direct download URL for Base NSP/XCI (can be blank if cached)'
+        required: false
       nsp_update_url:
         description: 'Direct download URL for Update NSP (optional)'
         required: false
@@ -78,8 +78,21 @@ jobs:
             exit 1
           fi
 
+      - name: Restore Cached Game NSPs
+        id: cache-nsp
+        uses: actions/cache@v4
+        with:
+          path: games_input/${{ github.event.inputs.game_name }}
+          key: nsp-${{ github.event.inputs.game_name }}
+
       - name: Download Game Rom Files
+        if: steps.cache-nsp.outputs.cache-hit != 'true'
         run: |
+          if [ -z "${{ github.event.inputs.nsp_base_url }}" ]; then
+            echo "ERROR: No cache found for 'nsp-${{ github.event.inputs.game_name }}' and no nsp_base_url was provided."
+            exit 1
+          fi
+
           GAME_DIR="games_input/${{ github.event.inputs.game_name }}"
           mkdir -p "$GAME_DIR"
           cd "$GAME_DIR"
