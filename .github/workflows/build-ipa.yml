@@ -1,0 +1,108 @@
+name: Build nxnative IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      game_name:
+        description: 'Target Folder / Game Name (e.g. MarioWonder)'
+        required: true
+        default: 'LetsGo'
+      nsp_base_url:
+        description: 'Direct download URL for Base NSP/XCI'
+        required: true
+      nsp_update_url:
+        description: 'Direct download URL for Update NSP (optional)'
+        required: false
+      nsp_dlc_url:
+        description: 'Direct download URL for DLC NSP (optional)'
+        required: false
+
+jobs:
+  build:
+    name: Build IPA on Apple Silicon
+    # Runs on GitHub's Apple Silicon runner image with macOS 26
+    runs-on: macos-26
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout nxnative Repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 27.1
+        run: |
+          # Set and verify Xcode 27.1 developer directory
+          sudo xcode-select -s /Applications/Xcode_27.1.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Download Metal Toolchain Component
+        run: |
+          # Downloads the tested Metal compiler toolchain required by nxnative
+          xcodebuild -downloadComponent MetalToolchain
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install System Build Tools (Homebrew)
+        run: |
+          brew install xcodegen zstd glslang
+
+      - name: Install Python Dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install lz4 capstone fonttools "backports.zstd; python_version < '3.14'" nsz
+
+      - name: Deploy prod.keys
+        env:
+          PROD_KEYS_CONTENT: ${{ secrets.PROD_KEYS }}
+        run: |
+          mkdir -p ~/.switch
+          echo "$PROD_KEYS_CONTENT" > ~/.switch/prod.keys
+          echo "$PROD_KEYS_CONTENT" > ./prod.keys
+          # Validate that prod.keys is not empty
+          if [ ! -s ./prod.keys ]; then
+            echo "ERROR: PROD_KEYS secret is empty or missing in repository settings!"
+            exit 1
+          fi
+
+      - name: Download Game Rom Files
+        run: |
+          GAME_DIR="games_input/${{ github.event.inputs.game_name }}"
+          mkdir -p "$GAME_DIR"
+          cd "$GAME_DIR"
+
+          echo "Downloading Base NSP..."
+          curl -L -o "base_game.nsp" "${{ github.event.inputs.nsp_base_url }}"
+
+          if [ -n "${{ github.event.inputs.nsp_update_url }}" ]; then
+            echo "Downloading Update NSP..."
+            curl -L -o "update.nsp" "${{ github.event.inputs.nsp_update_url }}"
+          fi
+
+          if [ -n "${{ github.event.inputs.nsp_dlc_url }}" ]; then
+            echo "Downloading DLC NSP..."
+            curl -L -o "dlc.nsp" "${{ github.event.inputs.nsp_dlc_url }}"
+          fi
+
+          ls -lh
+
+      - name: Run nxnative Build Pipeline
+        run: |
+          # Executes the extraction, shader translation, and IPA packaging
+          python3 scripts/build_ipa_from_nsp.py "games_input/${{ github.event.inputs.game_name }}"
+
+      - name: Locate and Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.inputs.game_name }}-IPA
+          path: |
+            *.ipa
+            **/*.ipa
+          retention-days: 2
+          if-no-files-found: error
